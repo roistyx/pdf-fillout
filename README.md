@@ -17,7 +17,7 @@ brew install tesseract
 
 **Python deps**:
 ```bash
-pip3 install -r requirements.txt
+pip3 install pymupdf pytesseract Pillow
 ```
 
 ## Setup
