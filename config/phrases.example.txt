@@ -1,0 +1,34 @@
+# Phrases the redact_flatten.py script will cover with black rectangles.
+#
+# To use: cp phrases.example.txt phrases.txt, then edit phrases.txt with your values.
+# phrases.txt is gitignored so your personal identifiers don't get committed.
+#
+# Rules:
+#   - One phrase per line.
+#   - Lines starting with '#' are comments (ignored).
+#   - Blank lines are ignored.
+#   - Leading/trailing whitespace on each phrase is stripped.
+#   - Text-based PDFs match case-SENSITIVE (add case variants explicitly).
+#   - Scanned PDFs (OCR path) match case-INSENSITIVE with punctuation stripped.
+#   - Multi-word phrases like "John Smith" match consecutive words on the same line.
+#
+# Override this list per-run with the --names CLI flag; if --names is passed,
+# this file is NOT read.
+
+# ── Name variants ──────────────────────────────────────────────
+# Your Name
+# YourName
+# Y. Name
+
+# ── Contact ────────────────────────────────────────────────────
+# you@example.com
+# +1-555-555-1234
+
+# ── Account numbers (uncomment specific values as needed) ──────
+# 123-45-6789
+# XXXX-XXXX-XXXX-1234
+
+# ── Common PII terms (be careful — these match every occurrence) ─
+# Account
+# SSN
+# DOB

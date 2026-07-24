@@ -1,0 +1,22 @@
+# Personal phrase list — never commit
+config/phrases.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Test / scratch outputs
+*-redacted.pdf
+/tmp-*/
