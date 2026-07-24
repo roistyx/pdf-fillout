@@ -1,6 +1,10 @@
 # Personal phrase list — never commit
 config/phrases.txt
 
+# Local requirements — each user maintains their own pinning
+# Runtime deps are: pymupdf, pytesseract, Pillow (see README).
+requirements.txt
+
 # Python
 __pycache__/
 *.py[cod]
