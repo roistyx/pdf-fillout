@@ -119,35 +119,85 @@
       padding: 48px 24px;
       text-align: center;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: border-color 0.15s, background 0.15s;
       position: relative;
       background: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
     }
+    .drop > * { pointer-events: none; }  /* clicks bubble to .drop, not children */
     .drop:hover, .drop.drag {
       border-color: var(--paper);
-      background: rgba(242, 237, 225, 0.03);
+      background: rgba(242, 237, 225, 0.04);
+    }
+    .drop.has-file {
+      border-style: solid;
+      border-color: var(--paper);
+      background: rgba(242, 237, 225, 0.05);
+    }
+    .drop-icon {
+      width: 32px;
+      height: 32px;
+      color: var(--paper-dim);
+      margin-bottom: 4px;
+      transition: color 0.15s;
+    }
+    .drop:hover .drop-icon, .drop.drag .drop-icon, .drop.has-file .drop-icon {
+      color: var(--paper);
     }
     .drop-title {
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 600;
-      margin-bottom: 6px;
     }
     .drop-sub {
       font-family: 'Menlo', monospace;
-      font-size: 11px;
-      letter-spacing: 0.15em;
+      font-size: 10px;
+      letter-spacing: 0.2em;
       color: var(--paper-dim);
       text-transform: uppercase;
     }
     .drop-file {
       font-family: 'Menlo', monospace;
-      font-size: 13px;
+      font-size: 12px;
       color: var(--paper);
-      margin-top: 12px;
+      margin-top: 8px;
+      padding: 6px 12px;
+      background: var(--ink);
+      border: 1px solid var(--line);
       word-break: break-all;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     .drop-file.empty { display: none; }
-    input[type=file] { display: none; }
+    .drop-file .check {
+      color: #6bb96b;
+      font-weight: bold;
+    }
+    .drop-clear {
+      pointer-events: auto !important;
+      background: transparent;
+      color: var(--paper-dim);
+      border: none;
+      cursor: pointer;
+      font-family: 'Menlo', monospace;
+      font-size: 14px;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .drop-clear:hover { color: var(--stamp); }
+    input[type=file] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      z-index: 1;
+      pointer-events: auto;
+    }
 
     /* ─── Form grid ─── */
     .fields {
@@ -336,12 +386,19 @@
     <form id="form">
       <div class="panel">
         <span class="panel-label">01 · Document</span>
-        <label for="pdf" class="drop" id="drop">
-          <div class="drop-title">Drop a PDF here</div>
-          <div class="drop-sub">or click to browse</div>
-          <div class="drop-file empty" id="drop-file"></div>
-          <input id="pdf" type="file" accept="application/pdf" required>
-        </label>
+        <div class="drop" id="drop">
+          <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <div class="drop-title" id="drop-title">Drop a PDF here</div>
+          <div class="drop-sub" id="drop-sub">or click to browse</div>
+          <div class="drop-file empty" id="drop-file">
+            <span class="check">✓</span>
+            <span id="drop-file-name"></span>
+            <button type="button" class="drop-clear" id="drop-clear" title="Remove">×</button>
+          </div>
+          <input id="pdf" type="file" accept="application/pdf,.pdf">
+        </div>
       </div>
 
       <div class="panel">
@@ -400,6 +457,10 @@ const form = document.getElementById('form');
 const dropZone = document.getElementById('drop');
 const fileInput = document.getElementById('pdf');
 const dropFile = document.getElementById('drop-file');
+const dropFileName = document.getElementById('drop-file-name');
+const dropTitle = document.getElementById('drop-title');
+const dropSub = document.getElementById('drop-sub');
+const dropClear = document.getElementById('drop-clear');
 const submitBtn = document.getElementById('submit');
 const statusEl = document.getElementById('status');
 const resultEl = document.getElementById('result');
@@ -410,26 +471,48 @@ const logEl = document.getElementById('log');
 function updateFileName() {
   const f = fileInput.files[0];
   if (f) {
-    dropFile.textContent = `▸ ${f.name}  ·  ${(f.size/1024).toFixed(0)} KB`;
+    dropFileName.textContent = `${f.name}  ·  ${(f.size/1024).toFixed(0)} KB`;
     dropFile.classList.remove('empty');
+    dropTitle.textContent = 'PDF selected';
+    dropSub.textContent = 'click to replace';
+    dropZone.classList.add('has-file');
   } else {
-    dropFile.textContent = '';
+    dropFileName.textContent = '';
     dropFile.classList.add('empty');
+    dropTitle.textContent = 'Drop a PDF here';
+    dropSub.textContent = 'or click to browse';
+    dropZone.classList.remove('has-file');
   }
 }
 
 fileInput.addEventListener('change', updateFileName);
 
-['dragenter','dragover'].forEach(evt => {
+dropClear.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  fileInput.value = '';
+  updateFileName();
+});
+
+['dragenter', 'dragover'].forEach(evt => {
   dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.add('drag'); });
 });
-['dragleave','drop'].forEach(evt => {
+['dragleave', 'drop'].forEach(evt => {
   dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.remove('drag'); });
 });
 dropZone.addEventListener('drop', (e) => {
   if (e.dataTransfer.files.length) {
-    fileInput.files = e.dataTransfer.files;
-    updateFileName();
+    // Filter to PDF only
+    const pdf = Array.from(e.dataTransfer.files).find(f =>
+      f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+    if (pdf) {
+      const dt = new DataTransfer();
+      dt.items.add(pdf);
+      fileInput.files = dt.files;
+      updateFileName();
+    } else {
+      setStatus('That doesn’t look like a PDF.', 'err');
+    }
   }
 });
 
