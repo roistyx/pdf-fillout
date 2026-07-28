@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UMBRA — declassified redactor</title>
+  <style>
+    :root {
+      --ink: #0a0a0a;
+      --paper: #f2ede1;
+      --paper-dim: #d8d2c1;
+      --stamp: #b31313;
+      --shadow: #1a1a1a;
+      --line: #3a3a3a;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      background: var(--ink);
+      color: var(--paper);
+      font-family: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* Grain texture overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.04;
+      z-index: 1;
+      background-image: radial-gradient(rgba(255,255,255,0.7) 1px, transparent 1px);
+      background-size: 3px 3px;
+    }
+
+    .stage {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 60px 32px 80px;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* ─── Header ─── */
+    header {
+      margin-bottom: 48px;
+      position: relative;
+    }
+    .brand {
+      font-family: 'Helvetica Neue', 'Arial Black', sans-serif;
+      font-weight: 900;
+      font-size: clamp(56px, 12vw, 128px);
+      line-height: 0.85;
+      letter-spacing: -0.04em;
+      color: var(--paper);
+      display: inline-block;
+      position: relative;
+    }
+    .brand::after {
+      content: '';
+      display: inline-block;
+      width: 0.55em;
+      height: 0.14em;
+      background: var(--paper);
+      margin-left: 0.08em;
+      vertical-align: 0.16em;
+    }
+    .tag {
+      font-family: 'Menlo', 'Courier New', monospace;
+      font-size: 11px;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--paper-dim);
+      margin-top: 16px;
+    }
+    .stamp {
+      position: absolute;
+      top: 24px;
+      right: 0;
+      border: 2px solid var(--stamp);
+      color: var(--stamp);
+      padding: 6px 12px 4px;
+      font-family: 'Menlo', monospace;
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 0.2em;
+      transform: rotate(-8deg);
+      opacity: 0.85;
+    }
+
+    /* ─── Panels ─── */
+    .panel {
+      background: var(--shadow);
+      border: 1px solid var(--line);
+      padding: 24px;
+      margin-bottom: 20px;
+      position: relative;
+    }
+    .panel-label {
+      position: absolute;
+      top: -8px;
+      left: 16px;
+      background: var(--ink);
+      padding: 0 8px;
+      font-family: 'Menlo', monospace;
+      font-size: 10px;
+      letter-spacing: 0.25em;
+      color: var(--paper-dim);
+      text-transform: uppercase;
+    }
+
+    /* ─── Drop zone ─── */
+    .drop {
+      border: 2px dashed var(--line);
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      background: transparent;
+    }
+    .drop:hover, .drop.drag {
+      border-color: var(--paper);
+      background: rgba(242, 237, 225, 0.03);
+    }
+    .drop-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .drop-sub {
+      font-family: 'Menlo', monospace;
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      color: var(--paper-dim);
+      text-transform: uppercase;
+    }
+    .drop-file {
+      font-family: 'Menlo', monospace;
+      font-size: 13px;
+      color: var(--paper);
+      margin-top: 12px;
+      word-break: break-all;
+    }
+    .drop-file.empty { display: none; }
+    input[type=file] { display: none; }
+
+    /* ─── Form grid ─── */
+    .fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .fields.full > * { grid-column: 1 / -1; }
+    .field {
+      display: flex;
+      flex-direction: column;
+    }
+    label {
+      font-family: 'Menlo', monospace;
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--paper-dim);
+      margin-bottom: 8px;
+    }
+    label .hint {
+      color: var(--line);
+      text-transform: none;
+      letter-spacing: 0;
+      margin-left: 6px;
+    }
+    input[type=text], input[type=number], textarea, select {
+      background: var(--ink);
+      color: var(--paper);
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      font-family: 'Menlo', monospace;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--paper);
+    }
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+      line-height: 1.4;
+    }
+
+    /* ─── Action ─── */
+    .action {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 24px;
+    }
+    button {
+      background: var(--paper);
+      color: var(--ink);
+      border: none;
+      padding: 14px 32px;
+      font-family: 'Menlo', monospace;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.05s;
+    }
+    button:hover:not(:disabled) { background: var(--stamp); color: var(--paper); }
+    button:active:not(:disabled) { transform: translateY(1px); }
+    button:disabled { opacity: 0.4; cursor: wait; }
+    .status {
+      font-family: 'Menlo', monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      color: var(--paper-dim);
+      flex: 1;
+    }
+    .status.err { color: var(--stamp); }
+    .status.ok { color: #6bb96b; }
+
+    /* ─── Result ─── */
+    .result {
+      display: none;
+      background: var(--shadow);
+      border: 1px solid var(--line);
+      padding: 24px;
+      margin-top: 24px;
+      position: relative;
+    }
+    .result.show { display: block; }
+    .result::before {
+      content: 'CLASSIFIED — RELEASED';
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      border: 1.5px solid #6bb96b;
+      color: #6bb96b;
+      padding: 4px 10px 3px;
+      font-family: 'Menlo', monospace;
+      font-size: 9px;
+      font-weight: bold;
+      letter-spacing: 0.2em;
+    }
+    .result-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .result-meta {
+      font-family: 'Menlo', monospace;
+      font-size: 11px;
+      color: var(--paper-dim);
+      margin-bottom: 16px;
+      word-break: break-all;
+    }
+    .download {
+      display: inline-block;
+      background: var(--paper);
+      color: var(--ink);
+      padding: 12px 24px;
+      text-decoration: none;
+      font-family: 'Menlo', monospace;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      transition: background 0.15s;
+    }
+    .download:hover { background: var(--stamp); color: var(--paper); }
+    .log {
+      margin-top: 16px;
+      padding: 12px;
+      background: var(--ink);
+      border-left: 3px solid var(--paper-dim);
+      font-family: 'Menlo', monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      color: var(--paper-dim);
+    }
+
+    /* ─── Redaction bar decoration in header ─── */
+    .redaction-row {
+      margin-top: 20px;
+      display: flex;
+      gap: 8px;
+    }
+    .rbar {
+      background: var(--paper);
+      height: 14px;
+    }
+    .rbar.w1 { width: 60px; }
+    .rbar.w2 { width: 120px; }
+    .rbar.w3 { width: 40px; }
+    .rbar.w4 { width: 100px; }
+    .rbar.w5 { width: 24px; }
+
+    footer {
+      margin-top: 60px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+      font-family: 'Menlo', monospace;
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--line);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <header>
+      <div class="stamp">DECLASSIFIED</div>
+      <div class="brand">UMBRA</div>
+      <div class="tag">pdf redaction, cast in shadow</div>
+      <div class="redaction-row">
+        <div class="rbar w1"></div>
+        <div class="rbar w2"></div>
+        <div class="rbar w3"></div>
+        <div class="rbar w4"></div>
+        <div class="rbar w5"></div>
+      </div>
+    </header>
+
+    <form id="form">
+      <div class="panel">
+        <span class="panel-label">01 · Document</span>
+        <label for="pdf" class="drop" id="drop">
+          <div class="drop-title">Drop a PDF here</div>
+          <div class="drop-sub">or click to browse</div>
+          <div class="drop-file empty" id="drop-file"></div>
+          <input id="pdf" type="file" accept="application/pdf" required>
+        </label>
+      </div>
+
+      <div class="panel">
+        <span class="panel-label">02 · Phrases</span>
+        <div class="fields full">
+          <div class="field">
+            <label for="names">Redact these phrases <span class="hint">(comma or newline separated · leave blank to use phrases.txt)</span></label>
+            <textarea id="names" placeholder="Roie Ab&#10;R. Abramson&#10;roieab@gmail.com"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <span class="panel-label">03 · Output</span>
+        <div class="fields">
+          <div class="field">
+            <label for="dpi">DPI <span class="hint">(72–600)</span></label>
+            <input id="dpi" type="number" value="150" min="72" max="600">
+          </div>
+          <div class="field">
+            <label for="fmt">Format</label>
+            <select id="fmt">
+              <option value="jpeg" selected>JPEG (smaller)</option>
+              <option value="png">PNG (lossless)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="jpeg_quality">JPEG quality <span class="hint">(1–100)</span></label>
+            <input id="jpeg_quality" type="number" value="85" min="1" max="100">
+          </div>
+          <div class="field">
+            <label for="ocr_dpi">OCR DPI <span class="hint">(scanned pages)</span></label>
+            <input id="ocr_dpi" type="number" value="300" min="72" max="600">
+          </div>
+        </div>
+      </div>
+
+      <div class="action">
+        <button type="submit" id="submit">Redact ▸</button>
+        <div class="status" id="status">Ready.</div>
+      </div>
+    </form>
+
+    <div class="result" id="result">
+      <div class="result-title" id="result-title">Redaction complete</div>
+      <div class="result-meta" id="result-meta"></div>
+      <a class="download" id="download" href="#">Download PDF</a>
+      <div class="log" id="log"></div>
+    </div>
+
+    <footer>Runs locally · PyMuPDF · Tesseract · loopback only</footer>
+  </div>
+
+<script>
+const form = document.getElementById('form');
+const dropZone = document.getElementById('drop');
+const fileInput = document.getElementById('pdf');
+const dropFile = document.getElementById('drop-file');
+const submitBtn = document.getElementById('submit');
+const statusEl = document.getElementById('status');
+const resultEl = document.getElementById('result');
+const resultMeta = document.getElementById('result-meta');
+const downloadLink = document.getElementById('download');
+const logEl = document.getElementById('log');
+
+function updateFileName() {
+  const f = fileInput.files[0];
+  if (f) {
+    dropFile.textContent = `▸ ${f.name}  ·  ${(f.size/1024).toFixed(0)} KB`;
+    dropFile.classList.remove('empty');
+  } else {
+    dropFile.textContent = '';
+    dropFile.classList.add('empty');
+  }
+}
+
+fileInput.addEventListener('change', updateFileName);
+
+['dragenter','dragover'].forEach(evt => {
+  dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.add('drag'); });
+});
+['dragleave','drop'].forEach(evt => {
+  dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.remove('drag'); });
+});
+dropZone.addEventListener('drop', (e) => {
+  if (e.dataTransfer.files.length) {
+    fileInput.files = e.dataTransfer.files;
+    updateFileName();
+  }
+});
+
+function setStatus(msg, cls) {
+  statusEl.className = 'status' + (cls ? ' ' + cls : '');
+  statusEl.textContent = msg;
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!fileInput.files[0]) { setStatus('Pick a PDF first.', 'err'); return; }
+
+  resultEl.classList.remove('show');
+  submitBtn.disabled = true;
+  setStatus('Processing… scanned pages take longer.');
+
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  fd.append('names', document.getElementById('names').value);
+  fd.append('dpi', document.getElementById('dpi').value);
+  fd.append('fmt', document.getElementById('fmt').value);
+  fd.append('jpeg_quality', document.getElementById('jpeg_quality').value);
+  fd.append('ocr_dpi', document.getElementById('ocr_dpi').value);
+
+  const t0 = performance.now();
+  try {
+    const resp = await fetch('/api/redact', { method: 'POST', body: fd });
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(err || `HTTP ${resp.status}`);
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const dt = ((performance.now() - t0) / 1000).toFixed(1);
+    const disp = resp.headers.get('content-disposition') || '';
+    const nameMatch = disp.match(/filename="?([^"]+)"?/);
+    const filename = nameMatch ? nameMatch[1] : 'redacted.pdf';
+
+    downloadLink.href = url;
+    downloadLink.download = filename;
+    resultMeta.textContent = `${filename}  ·  ${(blob.size/1024).toFixed(0)} KB  ·  ${dt}s`;
+
+    const log = resp.headers.get('x-umbra-log') || '';
+    logEl.textContent = log.replace(/ \| /g, '\n') || '(no log)';
+
+    resultEl.classList.add('show');
+    setStatus('Complete.', 'ok');
+    resultEl.scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    setStatus('Failed: ' + err.message, 'err');
+    logEl.textContent = err.message;
+    resultEl.classList.add('show');
+    resultMeta.textContent = 'Error — see log below';
+    downloadLink.style.display = 'none';
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
