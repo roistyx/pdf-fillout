@@ -3,7 +3,7 @@
 Quill — web UI for fill_form.py.
 
 Runs on http://127.0.0.1:8000 by default. Serves a single-page frontend and
-three endpoints:
+these endpoints:
 
     POST /api/inspect            upload a PDF -> page images + detected spots
     GET  /api/page/{token}/{n}   rendered page PNG

@@ -16,6 +16,10 @@ Values are stamped on top with Helvetica; checkboxes get a ✓.
 
 There is a CLI and a local web UI (see [`web/`](web/README.md)).
 
+Everything runs on your machine. No network calls, no cloud, no AI model:
+detection is geometry, filling is PyMuPDF, and the web server binds to
+loopback only.
+
 ## Install
 
 ```bash
@@ -61,6 +65,10 @@ Coordinates are PDF points, origin top-left. Text is auto-shrunk to fit the
 rect width. Add `--flatten` to rasterize the result so the values can't be
 edited or extracted afterwards.
 
+The input file is never modified; the output is a new PDF. Without
+`--flatten` the values are real text (selectable, searchable). With it,
+each page becomes an image and the PDF has no text layer at all.
+
 ## Web UI
 
 ```bash
@@ -69,9 +77,11 @@ cd web && python3 server.py      # http://127.0.0.1:8000
 
 Drop a PDF in, type directly on the rendered pages (or in the field list
 on the right — they stay in sync), click checkboxes, click any empty spot
-to add free text, then **Fill ▸** and download.
+to add free text, then **Fill ▸** and **Download**. The browser saves
+`filled-<original name>.pdf` to your downloads folder. Typed values are
+not stored anywhere; reloading the page clears them.
 
-## Autofill profile
+## Autofill profile (web UI)
 
 Keep your recurring answers in `config/profile.json` (gitignored) and the
 web UI fills matching fields in one click. Each entry is a label, a kind
@@ -91,6 +101,16 @@ skips fields whose label has words the entry lacks (a "school address"
 never gets your home address). Every text field also has a dropdown of
 profile values of the same kind.
 
+## Files
+
+```
+fill_form.py                  CLI + the detect/fill/flatten functions
+web/server.py                 FastAPI app wrapping fill_form.py
+web/index.html                single-page frontend, no build step
+config/profile.example.json   autofill profile template
+config/profile.json           your real profile (gitignored, optional)
+```
+
 ## Limitations
 
 - Scanned (image-only) PDFs aren't detected — there's no text layer or
@@ -99,3 +119,7 @@ profile values of the same kind.
   thinks the label is; the placement is what matters.
 - One line of text per spot. For a multi-line answer, add a free spot per
   line.
+- Signature and date lines take typed text only; there is no drawn
+  signature or image stamp.
+- The autofill profile is a web UI feature. The CLI takes explicit
+  entries only.
