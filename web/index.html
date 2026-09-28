@@ -272,6 +272,36 @@
     .status.ok { color: var(--ok); }
     .hint { font-size: 11px; color: var(--paper-dim); line-height: 1.5; }
     .hint b { color: var(--paper); font-weight: 600; }
+    /* ─── Profile panel ─── */
+    .prow {
+      display: grid;
+      grid-template-columns: 1fr 78px 1fr 20px;
+      gap: 6px;
+      align-items: center;
+    }
+    .prow input, .prow select {
+      background: var(--desk);
+      color: var(--paper);
+      border: 1px solid var(--line);
+      padding: 6px 8px;
+      font-family: 'Menlo', monospace;
+      font-size: 11px;
+      outline: none;
+      min-width: 0;
+    }
+    .prow input:focus, .prow select:focus { border-color: var(--accent); }
+    .prow .x {
+      background: transparent; border: none; color: var(--paper-dim);
+      cursor: pointer; font-size: 14px; padding: 0; line-height: 1;
+    }
+    .prow .x:hover { color: var(--err); }
+    .pbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pbtns .ghost { flex: 1; }
+    .pbtns .ghost.on { color: var(--paper); border-color: var(--paper); }
+    #profile-edit { display: none; flex-direction: column; gap: 8px; margin-top: 12px; }
+    #profile-edit.show { display: flex; }
+    .ppath { font-family: 'Menlo', monospace; font-size: 10px; color: var(--paper-dim); word-break: break-all; }
+
     .download {
       display: none;
       text-align: center;
@@ -327,6 +357,22 @@
       </div>
 
       <div>
+        <div class="side-title">Profile</div>
+        <div class="pbtns" style="margin-top:12px">
+          <button class="ghost" id="fill-profile" type="button" disabled>Fill from profile</button>
+          <button class="ghost" id="edit-profile" type="button">Edit profile</button>
+        </div>
+        <div id="profile-edit">
+          <div class="hint">Saved locally to <span class="ppath" id="profile-path">config/profile.json</span>. Label wording drives matching: "Parent 2 phone", "Child 1 name", "Home address line 2".</div>
+          <div id="profile-rows" style="display:flex;flex-direction:column;gap:6px"></div>
+          <div class="pbtns">
+            <button class="ghost" id="profile-add" type="button">+ Add</button>
+            <button class="ghost" id="profile-save" type="button">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
         <div class="side-title">Output</div>
         <div class="opts" style="margin-top:12px">
           <div class="o">
@@ -356,6 +402,8 @@ const fieldsEl = $('fields'), fieldsWrap = $('fields-wrap');
 const fillBtn = $('fill'), statusEl = $('status'), downloadEl = $('download');
 
 let doc = null;          // { token, filename, pages:[{index,width,height,image,spots}] }
+let profile = [];        // [{label, kind, value}]
+const KINDS = ['name', 'phone', 'email', 'address', 'date', 'language', 'other'];
 let spots = [];          // flat list of all spots, each with .value and .el (page) + .side (sidebar)
 let freeCounter = 0;
 
@@ -386,6 +434,7 @@ async function load(file) {
   $('doc-name').classList.remove('empty');
   dropEl.classList.add('hidden');
   fillBtn.disabled = false;
+  $('fill-profile').disabled = false;
   renderPages();
   renderSidebar();
   setStatus(spots.length ? 'Detected ' + spots.length + ' fillable spots.' : 'No blanks detected — click on the page to add text.', 'ok');
@@ -433,6 +482,7 @@ function mountSpot(s) {
   } else {
     const inp = document.createElement('input');
     inp.type = 'text'; inp.value = s.value || ''; inp.placeholder = s.free ? 'type here' : '';
+    inp.setAttribute('list', datalistFor(s));
     inp.addEventListener('input', () => setValue(s, inp.value, 'page'));
     inp.addEventListener('focus', () => highlight(s, true));
     inp.addEventListener('blur', () => highlight(s, false));
@@ -510,6 +560,7 @@ function renderSidebar() {
       const lb = document.createElement('label'); lb.textContent = s.label; lb.htmlFor = 'sb-' + s.id;
       if (s.free) lb.className = 'sub';
       const inp = document.createElement('input'); inp.type = 'text'; inp.value = s.value || ''; inp.id = 'sb-' + s.id;
+      inp.setAttribute('list', datalistFor(s));
       inp.addEventListener('input', () => setValue(s, inp.value, 'side'));
       inp.addEventListener('focus', () => { highlight(s, true); s.el.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
       inp.addEventListener('blur', () => highlight(s, false));
@@ -536,6 +587,137 @@ $('clear').addEventListener('click', () => {
   spots.forEach(s => setValue(s, s.type === 'check' ? false : ''));
   spots.filter(s => s.free).forEach(removeSpot);
 });
+
+// ─── Profile ───
+const STOP = new Set(['the', 'of', 'in', 'at', 'a', 'an', 'and', 'or', 'for', 'to', 'line', 'number', 'no', 's', 'ren']);
+const KIND_WORDS = {
+  phone: ['phone', 'tel', 'telephone', 'mobile', 'cell', 'fax'],
+  email: ['email', 'e-mail', 'mail'],
+  date: ['date', 'dob', 'birth', 'born', 'birthday'],
+  address: ['address', 'street', 'city', 'zip', 'state', 'apt'],
+  language: ['language', 'languages'],
+  name: ['name', 'parent', 'guardian', 'child', 'student', 'signature', 'mother', 'father', 'applicant'],
+};
+const SYNONYM = { student: 'child', children: 'child', kid: 'child', guardian: 'parent', mother: 'parent', father: 'parent', dob: 'birth', tel: 'phone', mobile: 'phone', cell: 'phone' };
+function words(str) {
+  return (str || '').toLowerCase().replace(/[()\/,.:#-]/g, ' ').split(/\s+/)
+    .filter(w => w && !STOP.has(w)).map(w => SYNONYM[w] || w);
+}
+function kindOf(label) {
+  const ws = words(label);
+  for (const k of ['phone', 'email', 'date', 'address', 'language', 'name']) {
+    if (ws.some(w => KIND_WORDS[k].some(kw => w.startsWith(kw)))) return k;
+  }
+  return 'other';
+}
+function ordinalOf(label) {
+  const m = (label || '').match(/\((\d)\)|\b(\d)\b|\b(first|second|third)\b/i);
+  if (!m) return null;
+  if (m[3]) return { first: 1, second: 2, third: 3 }[m[3].toLowerCase()];
+  return parseInt(m[1] || m[2], 10);
+}
+function datalistFor(s) {
+  return 'dl-' + (s.free ? 'other' : kindOf(s.label));
+}
+function renderDatalists() {
+  document.querySelectorAll('datalist').forEach(d => d.remove());
+  const byKind = {};
+  KINDS.forEach(k => byKind[k] = []);
+  profile.forEach(e => { if (e.value) byKind[e.kind in byKind ? e.kind : 'other'].push(e); });
+  KINDS.forEach(k => {
+    const dl = document.createElement('datalist'); dl.id = 'dl-' + k;
+    // kind-specific first, then everything else so any value is reachable
+    const rest = profile.filter(e => e.value && !byKind[k].includes(e));
+    [...byKind[k], ...rest].forEach(e => {
+      const o = document.createElement('option'); o.value = e.value; o.label = e.label; dl.appendChild(o);
+    });
+    document.body.appendChild(dl);
+  });
+}
+function scoreMatch(spot, entry) {
+  const sk = spot.free ? 'other' : kindOf(spot.label), ek = entry.kind;
+  if (sk === 'other' || ek !== sk) return -1;
+  let score = 10;
+  const sw = words(spot.label), ew = words(entry.label);
+  const isNum = w => /^\d+$/.test(w);   // ordinals are scored separately below
+  const fuzzy = (w, list) => list.some(x => x.startsWith(w) || w.startsWith(x));
+  const hits = ew.filter(w => !isNum(w) && fuzzy(w, sw));
+  const entryMisses = ew.filter(w => !isNum(w) && !fuzzy(w, sw));   // "home" vs a school address
+  const spotMisses = sw.filter(w => !isNum(w) && !fuzzy(w, ew));    // "school" vs a home address
+  score += 2 * hits.length - 4 * entryMisses.length - 2 * spotMisses.length;
+  const so = ordinalOf(spot.label), eo = ordinalOf(entry.label);
+  if (so != null && eo != null) score += so === eo ? 5 : -5;
+  else if (so == null && eo === 1) score += 1;
+  else if (so != null && so > 1 && eo == null) score -= 2;
+  return score;
+}
+function fillFromProfile() {
+  if (!doc) return;
+  const used = new Map();   // entry -> page it was used on
+  let n = 0;
+  spots.filter(s => s.type === 'text' && !(s.value || '').trim()).forEach(s => {
+    let best = null, bestScore = 0;
+    profile.forEach(e => {
+      if (!e.value) return;
+      const sc = scoreMatch(s, e);
+      // an entry is used once per page; reuse elsewhere only on a strong (word-level) match
+      if (used.has(e) && (used.get(e) === s.page || sc < 14)) return;
+      if (sc > bestScore) { best = e; bestScore = sc; }
+    });
+    if (best) { setValue(s, best.value); used.set(best, s.page); n++; }
+  });
+  setStatus(n ? `Filled ${n} field${n > 1 ? 's' : ''} from profile. Check the rest by hand.` : 'Nothing matched — check profile labels.', n ? 'ok' : 'err');
+}
+async function loadProfile() {
+  try {
+    const resp = await fetch('/api/profile');
+    if (!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json();
+    profile = data.entries || [];
+    $('profile-path').textContent = data.path || 'config/profile.json';
+  } catch (err) { profile = []; setStatus('Profile: ' + err.message, 'err'); }
+  renderDatalists();
+}
+function renderProfileRows() {
+  const wrap = $('profile-rows'); wrap.innerHTML = '';
+  if (!profile.length) profile.push({ label: '', kind: 'name', value: '' });
+  profile.forEach((e, i) => {
+    const row = document.createElement('div'); row.className = 'prow';
+    const lb = document.createElement('input'); lb.type = 'text'; lb.placeholder = 'Label'; lb.value = e.label;
+    lb.addEventListener('input', () => { e.label = lb.value; if (!e._kindTouched) { e.kind = kindOf(lb.value) === 'other' ? e.kind : kindOf(lb.value); sel.value = e.kind; } });
+    const sel = document.createElement('select');
+    KINDS.forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = k; sel.appendChild(o); });
+    sel.value = KINDS.includes(e.kind) ? e.kind : 'other';
+    sel.addEventListener('change', () => { e.kind = sel.value; e._kindTouched = true; });
+    const val = document.createElement('input'); val.type = 'text'; val.placeholder = 'Value'; val.value = e.value;
+    val.addEventListener('input', () => { e.value = val.value; });
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'x'; x.textContent = '×'; x.title = 'Remove';
+    x.addEventListener('click', () => { profile.splice(i, 1); renderProfileRows(); });
+    row.append(lb, sel, val, x);
+    wrap.appendChild(row);
+  });
+}
+$('edit-profile').addEventListener('click', () => {
+  const panel = $('profile-edit');
+  const open = !panel.classList.contains('show');
+  panel.classList.toggle('show', open);
+  $('edit-profile').classList.toggle('on', open);
+  if (open) renderProfileRows();
+});
+$('profile-add').addEventListener('click', () => { profile.push({ label: '', kind: 'name', value: '' }); renderProfileRows(); $('profile-rows').lastChild.firstChild.focus(); });
+$('profile-save').addEventListener('click', async () => {
+  const entries = profile.map(({ label, kind, value }) => ({ label, kind, value })).filter(e => e.label.trim() || e.value.trim());
+  try {
+    const resp = await fetch('/api/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries }) });
+    if (!resp.ok) throw new Error(await resp.text());
+    profile = (await resp.json()).entries;
+    renderProfileRows();
+    renderDatalists();
+    setStatus(`Profile saved (${profile.length} entries).`, 'ok');
+  } catch (err) { setStatus('Save failed: ' + err.message, 'err'); }
+});
+$('fill-profile').addEventListener('click', fillFromProfile);
+loadProfile();
 
 // ─── Fill ───
 fillBtn.addEventListener('click', async () => {

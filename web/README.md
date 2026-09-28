@@ -9,6 +9,9 @@ step, runs locally on loopback only.
 - Pages are rendered; detected blanks and checkboxes are overlaid as inputs
 - Type straight on the page, or in the sidebar field list (two-way synced)
 - Click any empty spot on a page to add free text; hover it and hit × to remove
+- **Fill from profile** drops your saved name / phone / address entries
+  into matching fields; **Edit profile** manages them (saved to
+  `config/profile.json`, gitignored)
 - Pick font size and whether to flatten (rasterize) the output
 - **Fill ▸** → download the filled PDF
 
@@ -33,6 +36,8 @@ QUILL_PORT=9000 python3 server.py  # different port
 | POST   | `/api/inspect`           | multipart `file` → `{token, pages[...]}`     |
 | GET    | `/api/page/{token}/{n}`  | rendered PNG of page `n` (144 dpi)           |
 | POST   | `/api/fill`              | `{token, entries, flatten, size}` → PDF      |
+| GET    | `/api/profile`           | autofill entries from `config/profile.json`  |
+| PUT    | `/api/profile`           | replace the profile file                      |
 
 Sessions live in memory and their temp dirs (`quill-*`) are not purged —
 restart the server occasionally.

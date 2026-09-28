@@ -21,3 +21,6 @@ requirements.txt
 filled-*.pdf
 *.filled.pdf
 /tmp-*/
+
+# Personal autofill profile — never commit
+config/profile.json

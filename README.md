@@ -71,6 +71,26 @@ Drop a PDF in, type directly on the rendered pages (or in the field list
 on the right — they stay in sync), click checkboxes, click any empty spot
 to add free text, then **Fill ▸** and download.
 
+## Autofill profile
+
+Keep your recurring answers in `config/profile.json` (gitignored) and the
+web UI fills matching fields in one click. Each entry is a label, a kind
+(name / phone / email / address / date / language / other) and a value:
+
+```bash
+cp config/profile.example.json config/profile.json
+```
+
+Or open **Edit profile** in the web UI's sidebar and type them there;
+**Save** writes the same file.
+
+Matching is by label wording, so name entries the way forms do:
+"Parent 2 phone", "Child 1 name", "Home address line 2". The matcher
+uses the kind, shared words, and ordinals like "(2)" or "second", and
+skips fields whose label has words the entry lacks (a "school address"
+never gets your home address). Every text field also has a dropdown of
+profile values of the same kind.
+
 ## Limitations
 
 - Scanned (image-only) PDFs aren't detected — there's no text layer or

@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {"label": "Parent 1 name",          "kind": "name",     "value": "Jane Doe"},
+    {"label": "Parent 2 name",          "kind": "name",     "value": "John Doe"},
+    {"label": "Parent 1 phone",         "kind": "phone",    "value": "(555) 123-4567"},
+    {"label": "Parent 2 phone",         "kind": "phone",    "value": "(555) 765-4321"},
+    {"label": "Child 1 name",           "kind": "name",     "value": "Sam Doe"},
+    {"label": "Child 1 date of birth",  "kind": "date",     "value": "01/02/2019"},
+    {"label": "Home address line 1",    "kind": "address",  "value": "123 Main St"},
+    {"label": "Home address line 2",    "kind": "address",  "value": "Pompano Beach, FL 33060"},
+    {"label": "Email",                  "kind": "email",    "value": "jane@example.com"},
+    {"label": "Languages at home",      "kind": "language", "value": "English"}
+  ]
+}

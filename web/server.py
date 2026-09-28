@@ -8,6 +8,8 @@ three endpoints:
     POST /api/inspect            upload a PDF -> page images + detected spots
     GET  /api/page/{token}/{n}   rendered page PNG
     POST /api/fill               token + entries -> filled PDF download
+    GET  /api/profile            local autofill profile (config/profile.json)
+    PUT  /api/profile            replace the profile
 
 Bind is loopback-only. Do NOT expose to the internet — uploads are written
 to a temp dir and there is no authentication.
@@ -30,16 +32,20 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Optional
 
+import json
+
 import fitz
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, HTMLResponse
+from pydantic import BaseModel, Field
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 import fill_form  # noqa: E402
 
 INDEX_HTML = Path(__file__).resolve().parent / "index.html"
+PROFILE_PATH = REPO_ROOT / "config" / "profile.json"
+PROFILE_KINDS = ("name", "phone", "email", "address", "date", "language", "other")
 RENDER_DPI = 144
 SESSIONS: dict[str, dict[str, Any]] = {}
 
@@ -136,6 +142,43 @@ async def fill(req: FillRequest):
         out_path, media_type="application/pdf", filename=out_name,
         headers={"X-Quill-Written": str(n)},
     )
+
+
+class ProfileEntry(BaseModel):
+    label: str = Field(max_length=120)
+    kind: str = "other"
+    value: str = Field(max_length=500)
+
+
+class Profile(BaseModel):
+    entries: list[ProfileEntry] = Field(default_factory=list, max_length=200)
+
+
+@app.get("/api/profile")
+async def get_profile():
+    if not PROFILE_PATH.exists():
+        return {"entries": [], "path": str(PROFILE_PATH)}
+    try:
+        data = json.loads(PROFILE_PATH.read_text())
+        prof = Profile.model_validate(data)
+    except Exception as e:
+        raise HTTPException(500, f"profile.json is not valid: {e}")
+    return {"entries": [e.model_dump() for e in prof.entries], "path": str(PROFILE_PATH)}
+
+
+@app.put("/api/profile")
+async def put_profile(prof: Profile):
+    cleaned = []
+    for e in prof.entries:
+        if e.kind not in PROFILE_KINDS:
+            raise HTTPException(400, f"unknown kind {e.kind!r}")
+        if e.label.strip() or e.value.strip():
+            cleaned.append(ProfileEntry(label=e.label.strip(), kind=e.kind, value=e.value.strip()))
+    PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = PROFILE_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({"entries": [e.model_dump() for e in cleaned]}, indent=2) + "\n")
+    tmp.replace(PROFILE_PATH)
+    return {"entries": [e.model_dump() for e in cleaned], "path": str(PROFILE_PATH)}
 
 
 def _session(token: str) -> dict[str, Any]:
