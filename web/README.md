@@ -1,79 +1,43 @@
-# UMBRA
+# QUILL
 
-A web UI for [`redact_flatten.py`](../redact_flatten.py). Bold, single-page,
-dark, dossier-style. Runs locally on loopback only.
-
-![tag](https://img.shields.io/badge/pdfs-in%20the%20shadow-black)
+A web UI for [`fill_form.py`](../fill_form.py). Single page, no build
+step, runs locally on loopback only.
 
 ## What it does
 
 - Upload a PDF (drag-drop or click)
-- Optionally override the phrase list for this run
-- Pick output DPI, format (JPEG/PNG), JPEG quality, OCR DPI
-- Click **Redact ▸**
-- Download the redacted PDF; see the CLI log inline
-
-Underneath: same `redact_flatten.py` you'd run from the command line — the
-web server just wraps it as a subprocess.
+- Pages are rendered; detected blanks and checkboxes are overlaid as inputs
+- Type straight on the page, or in the sidebar field list (two-way synced)
+- Click any empty spot on a page to add free text; hover it and hit × to remove
+- Pick font size and whether to flatten (rasterize) the output
+- **Fill ▸** → download the filled PDF
 
 ## Install
 
 ```bash
-pip3 install fastapi 'uvicorn[standard]' python-multipart
+pip3 install fastapi 'uvicorn[standard]' python-multipart pymupdf
 ```
-
-Requires the CLI's own deps too: `pymupdf`, `pytesseract`, `Pillow`, and
-the `tesseract` binary (`brew install tesseract`). Those are covered by the
-main [README](../README.md#install).
 
 ## Run
 
 ```bash
-cd ~/Developer/pdf-redact/web
-python3 server.py
+cd ~/Developer/PDF-fillout/web
+python3 server.py                  # http://127.0.0.1:8000
+QUILL_PORT=9000 python3 server.py  # different port
 ```
 
-Then open http://127.0.0.1:8000 in your browser.
+## API
 
-Different port:
-```bash
-UMBRA_PORT=9000 python3 server.py
-```
+| Method | Path                     | Purpose                                      |
+|--------|--------------------------|----------------------------------------------|
+| POST   | `/api/inspect`           | multipart `file` → `{token, pages[...]}`     |
+| GET    | `/api/page/{token}/{n}`  | rendered PNG of page `n` (144 dpi)           |
+| POST   | `/api/fill`              | `{token, entries, flatten, size}` → PDF      |
+
+Sessions live in memory and their temp dirs (`quill-*`) are not purged —
+restart the server occasionally.
 
 ## Security notes
 
-- **Loopback bind only** (`127.0.0.1`). Do not change to `0.0.0.0` without
-  understanding the exposure — this endpoint runs arbitrary user-supplied
-  filenames through a subprocess.
-- Uploads land in `/private/var/folders/.../umbra-XXX/`. The subprocess reads
-  them and writes the output next to the input. Temp dirs are not
-  auto-purged — restart the server occasionally, or add a cleanup hook if
-  you use it heavily.
-- The endpoint is not authenticated. On your Mac this is fine (loopback
-  can't be reached from other devices without extra plumbing). If you ever
-  want remote access, put it behind a reverse proxy with auth.
-
-## Files
-
-```
-web/
-├── server.py       FastAPI app: /  (HTML)  +  POST /api/redact
-├── index.html      Single-page frontend (no build step, no framework)
-└── README.md       This file
-```
-
-## Design
-
-The look — declassified dossier: near-black background, warm off-white
-paper text, monospace labels for metadata, red "DECLASSIFIED" stamp,
-solid black redaction bars as a decorative element. Feels like the file
-came out of a filing cabinet, not a browser.
-
-## Alias
-
-If you'd like a shortcut:
-```bash
-echo "alias umbra='cd ~/Developer/pdf-redact/web && python3 server.py'" >> ~/.zshrc
-source ~/.zshrc
-umbra
-```
+- **Loopback bind only** (`127.0.0.1`). Uploads are written to a temp dir
+  and there is no authentication; do not expose this.

@@ -1,123 +1,81 @@
-# pdf-redact
+# pdf-fillout
 
-Redact names (or arbitrary phrases) from a PDF and flatten it to an image-only
-PDF. Flattening deletes the text layer entirely — the redacted phrase is
-literally gone, not just visually covered.
+Fill out PDF forms — including the "flat" kind that have no real form
+fields, just `__________` lines and little square boxes.
 
-Handles both text-based PDFs (via PyMuPDF's `search_for`) and scanned image
-PDFs (via Tesseract OCR) automatically. You don't specify which type; the
-script detects and picks the right path per-page.
+`fill_form.py` looks at the page and finds the fillable spots itself:
+
+1. **Real AcroForm widgets** if the PDF has them (text, checkbox, radio).
+2. **Underscore runs** in the text layer and thin drawn horizontal lines
+   → text fields.
+3. **Small square vector shapes** → checkboxes.
+
+Each spot gets a best-guess label from the text next to it ("Parent phone
+number", "Preschool"), and checkboxes get the question they belong to.
+Values are stamped on top with Helvetica; checkboxes get a ✓.
+
+There is a CLI and a local web UI (see [`web/`](web/README.md)).
 
 ## Install
 
-**System deps** (macOS):
 ```bash
-brew install tesseract
+pip3 install pymupdf                                   # CLI
+pip3 install fastapi 'uvicorn[standard]' python-multipart   # web UI
 ```
 
-**Python deps**:
+## CLI usage
+
+See what the tool finds:
 ```bash
-pip3 install pymupdf pytesseract Pillow
+python3 fill_form.py detect form.pdf --pretty
+```
+```
+--- page 1
+    s1  text    (309,217)  (1)Parent/Guardian Name
+    s2  text    (306,262)  (2) Parent/Guardian Name
+    ...
+--- page 2
+   s18  check   (413,199)  [Sibling(s) Currently Enrolled] Preschool
 ```
 
-## Setup
-
-Copy the example phrase list and edit with your own identifiers:
+Get the same thing as JSON, edit in the values, and fill:
 ```bash
-cp config/phrases.example.txt config/phrases.txt
-$EDITOR config/phrases.txt
+python3 fill_form.py detect form.pdf > spots.json
+# set "value" on the spots you want (text string, or true for checkboxes),
+# then wrap them in {"entries": [...]}  — or just hand-write entries:
+python3 fill_form.py fill form.pdf filled.pdf --data entries.json
 ```
 
-`config/phrases.txt` is gitignored — your real values stay local.
-
-## Usage
-
-Basic:
-```bash
-python3 redact_flatten.py input.pdf output.pdf
+`entries.json`:
+```json
+{
+  "entries": [
+    {"page": 0, "type": "text",  "rect": [309, 217, 519, 232], "value": "Jane Doe"},
+    {"page": 1, "type": "check", "rect": [413, 199, 428, 215], "value": true},
+    {"page": 2, "type": "text",  "rect": [100, 600, 300, 616], "value": "any text, anywhere"}
+  ]
+}
 ```
 
-Override phrase list for one document:
-```bash
-python3 redact_flatten.py input.pdf output.pdf --names "Some Corp" "Case #12345"
-```
+Coordinates are PDF points, origin top-left. Text is auto-shrunk to fit the
+rect width. Add `--flatten` to rasterize the result so the values can't be
+edited or extracted afterwards.
 
-Higher-quality output for print:
-```bash
-python3 redact_flatten.py input.pdf output.pdf --dpi 300 --jpeg-quality 95
-```
-
-Lossless output for line art / technical diagrams:
-```bash
-python3 redact_flatten.py input.pdf output.pdf --format png
-```
-
-See all options: `python3 redact_flatten.py --help`
-
-## Optional: shell alias
+## Web UI
 
 ```bash
-echo "alias redact-pdf='python3 $HOME/Developer/pdf-redact/redact_flatten.py'" >> ~/.zshrc
-source ~/.zshrc
+cd web && python3 server.py      # http://127.0.0.1:8000
 ```
 
-Then just:
-```bash
-redact-pdf input.pdf output.pdf
-```
+Drop a PDF in, type directly on the rendered pages (or in the field list
+on the right — they stay in sync), click checkboxes, click any empty spot
+to add free text, then **Fill ▸** and download.
 
-## How it works
+## Limitations
 
-For each page:
-1. **Check for a text layer.** If present → PyMuPDF's `search_for` finds
-   phrase occurrences and covers each match with a black rectangle at PDF
-   coordinates. Then rasterize.
-2. **If no text layer (scan)** → OCR the rasterized page with Tesseract to
-   get word-level bounding boxes. Match phrases (case-insensitive,
-   punctuation-stripped, multi-word supported). Draw black rectangles on the
-   raster.
-3. Insert the rasterized image as the sole content of the output PDF page.
-   No fonts, no text, no metadata.
-
-Text-based pages: fast (seconds), high accuracy, small output.
-Scanned pages: slower (10–60s per page), decent accuracy, larger output.
-
-## Caveats
-
-**Case sensitivity differs by path.**
-Text-based: exact case (`search_for("Roie")` won't match `roie`).
-OCR: case-insensitive with punctuation stripped.
-For text-based PDFs, add every case variant to your phrases file.
-
-**OCR is not perfect.**
-Small fonts, stylized text, low-res scans may not be recognized. Very large
-pages are auto-clamped to ≤100 megapixels so OCR runs at a lower DPI than
-requested — printed at bottom of output. If a phrase appears in the PDF but
-isn't caught, options: raise `--ocr-dpi`, add a variant to the phrases list,
-or manually cover with an image editor.
-
-**Redaction covers rectangles, not context.**
-`"Roie"` matches all standalone occurrences of the word. If your name appears
-inside `"Roiebot"` or a filename, that gets partially covered. Add specific
-patterns to the phrases list rather than trying to be too broad.
-
-**The output is bigger than the input.**
-Flattening a 2 KB text PDF produces a ~90 KB image-flattened PDF. A 1 MB
-document typically becomes 2–4 MB. Cost of no text layer.
-
-## Files
-
-```
-pdf-redact/
-├── redact_flatten.py            Main script
-├── config/
-│   ├── phrases.example.txt      Template (versioned)
-│   └── phrases.txt              Your real list (gitignored)
-├── requirements.txt             Python deps
-├── .gitignore
-└── README.md
-```
-
-## License
-
-Personal tool; no license granted. Feel free to fork and adapt for your own use.
+- Scanned (image-only) PDFs aren't detected — there's no text layer or
+  vector drawing to find. You can still click anywhere to place text.
+- Label guessing is heuristic. Hover a spot in the web UI to see what it
+  thinks the label is; the placement is what matters.
+- One line of text per spot. For a multi-line answer, add a free spot per
+  line.

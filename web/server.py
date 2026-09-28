@@ -1,38 +1,49 @@
 #!/usr/bin/env python3
 """
-Umbra — web UI for the pdf-redact CLI.
+Quill — web UI for fill_form.py.
 
-Runs on http://127.0.0.1:8000 by default. Serves a single-page frontend +
-one POST endpoint that shells out to redact_flatten.py.
+Runs on http://127.0.0.1:8000 by default. Serves a single-page frontend and
+three endpoints:
 
-Bind is loopback-only. Do NOT expose to the internet — this endpoint writes
-files to a temp dir and runs a subprocess with user-supplied args.
+    POST /api/inspect            upload a PDF -> page images + detected spots
+    GET  /api/page/{token}/{n}   rendered page PNG
+    POST /api/fill               token + entries -> filled PDF download
+
+Bind is loopback-only. Do NOT expose to the internet — uploads are written
+to a temp dir and there is no authentication.
 
 Requires:
-    pip3 install fastapi 'uvicorn[standard]' python-multipart
-    plus the CLI's own deps: pymupdf, pytesseract, Pillow, tesseract binary
+    pip3 install fastapi 'uvicorn[standard]' python-multipart pymupdf
 
 Run:
     python3 server.py                 # http://127.0.0.1:8000
-    UMBRA_PORT=9000 python3 server.py # different port
+    QUILL_PORT=9000 python3 server.py # different port
 """
 
-import asyncio
 import os
+import re
+import secrets
 import shutil
 import sys
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+import fitz
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from pydantic import BaseModel
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CLI = REPO_ROOT / "redact_flatten.py"
-INDEX_HTML = Path(__file__).resolve().parent / "index.html"
+sys.path.insert(0, str(REPO_ROOT))
+import fill_form  # noqa: E402
 
-app = FastAPI(title="Umbra", docs_url=None, redoc_url=None)
+INDEX_HTML = Path(__file__).resolve().parent / "index.html"
+RENDER_DPI = 144
+SESSIONS: dict[str, dict[str, Any]] = {}
+
+app = FastAPI(title="Quill", docs_url=None, redoc_url=None)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -42,96 +53,101 @@ async def index() -> HTMLResponse:
     return HTMLResponse(INDEX_HTML.read_text())
 
 
-@app.post("/api/redact")
-async def redact(
-    file: UploadFile = File(...),
-    names: Optional[str] = Form(None),
-    dpi: int = Form(150),
-    fmt: str = Form("jpeg"),
-    jpeg_quality: int = Form(85),
-    ocr_dpi: int = Form(300),
-):
-    """
-    Accept a PDF + options, run redact_flatten.py, return the redacted PDF.
-
-    `names` is a newline- or comma-separated list. If omitted, the CLI's
-    default (phrases.txt or built-in fallback) is used.
-    """
+@app.post("/api/inspect")
+async def inspect(file: UploadFile = File(...)):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "please upload a .pdf file")
-    if fmt not in ("jpeg", "png"):
-        raise HTTPException(400, "format must be 'jpeg' or 'png'")
-    if not (72 <= dpi <= 600):
-        raise HTTPException(400, "dpi out of range (72-600)")
-    if not (1 <= jpeg_quality <= 100):
-        raise HTTPException(400, "jpeg_quality out of range (1-100)")
 
-    workdir = Path(tempfile.mkdtemp(prefix="umbra-"))
+    token = secrets.token_urlsafe(12)
+    workdir = Path(tempfile.mkdtemp(prefix="quill-"))
     input_path = workdir / "input.pdf"
-    output_path = workdir / f"redacted-{file.filename}"
-
-    # Persist the uploaded PDF
     with input_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # Build the CLI invocation
-    cmd = [
-        sys.executable,
-        str(CLI),
-        str(input_path),
-        str(output_path),
-        "--dpi", str(dpi),
-        "--format", fmt,
-        "--jpeg-quality", str(jpeg_quality),
-        "--ocr-dpi", str(ocr_dpi),
-    ]
-
-    parsed_names = _parse_names(names)
-    if parsed_names:
-        cmd.extend(["--names", *parsed_names])
-
-    # Run the CLI subprocess. Capture stdout/stderr for the client.
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    stdout_bytes, _ = await proc.communicate()
-    log = stdout_bytes.decode("utf-8", errors="replace")
-
-    if proc.returncode != 0 or not output_path.exists():
+    try:
+        doc = fitz.open(input_path)
+        pages = fill_form.detect(doc)
+        for page in doc:
+            page.get_pixmap(dpi=RENDER_DPI, alpha=False).save(workdir / f"p{page.number}.png")
+    except Exception as e:  # corrupt / encrypted / not really a PDF
         shutil.rmtree(workdir, ignore_errors=True)
-        raise HTTPException(
-            500,
-            f"redact_flatten.py exited {proc.returncode}\n\n{log}",
-        )
+        raise HTTPException(400, f"could not read PDF: {e}")
 
-    # Include the CLI log in a response header for the UI to show.
+    SESSIONS[token] = {"dir": workdir, "name": file.filename, "pages": len(doc)}
+    return {
+        "token": token,
+        "filename": file.filename,
+        "is_form": bool(doc.is_form_pdf),
+        "pages": [
+            {
+                "index": p.index, "width": p.width, "height": p.height,
+                "image": f"/api/page/{token}/{p.index}",
+                "spots": [asdict(s) for s in p.spots],
+            }
+            for p in pages
+        ],
+    }
+
+
+@app.get("/api/page/{token}/{n}")
+async def page_image(token: str, n: int):
+    sess = _session(token)
+    path = sess["dir"] / f"p{n}.png"
+    if not path.exists():
+        raise HTTPException(404, "no such page")
+    return FileResponse(path, media_type="image/png")
+
+
+class Entry(BaseModel):
+    page: int
+    type: str = "text"
+    rect: list[float]
+    value: Any = None
+    size: Optional[float] = None
+    widget: Optional[str] = None
+
+
+class FillRequest(BaseModel):
+    token: str
+    entries: list[Entry]
+    flatten: bool = False
+    size: float = 10.0
+    dpi: int = 150
+
+
+@app.post("/api/fill")
+async def fill(req: FillRequest):
+    sess = _session(req.token)
+    if not (6 <= req.size <= 36):
+        raise HTTPException(400, "size out of range (6-36)")
+    if not (72 <= req.dpi <= 600):
+        raise HTTPException(400, "dpi out of range (72-600)")
+
+    doc = fitz.open(sess["dir"] / "input.pdf")
+    n = fill_form.fill(doc, [e.model_dump() for e in req.entries], default_size=req.size)
+    out_name = "filled-" + re.sub(r"[^\w.\- ]", "_", sess["name"])
+    out_path = sess["dir"] / out_name
+    if req.flatten:
+        fill_form.flatten(doc, dpi=req.dpi).save(out_path)
+    else:
+        doc.save(out_path, garbage=3, deflate=True)
+
     return FileResponse(
-        output_path,
-        media_type="application/pdf",
-        filename=output_path.name,
-        headers={"X-Umbra-Log": _sanitize_header(log)},
-        background=None,  # keep the file on disk so the download can complete
+        out_path, media_type="application/pdf", filename=out_name,
+        headers={"X-Quill-Written": str(n)},
     )
 
 
-def _parse_names(names_field: Optional[str]) -> list[str]:
-    """Accept commas or newlines as separators."""
-    if not names_field:
-        return []
-    raw = names_field.replace("\r", "\n").replace(",", "\n").split("\n")
-    return [n.strip() for n in raw if n.strip()]
-
-
-def _sanitize_header(s: str) -> str:
-    """HTTP headers can't hold newlines or non-ASCII cleanly. Fold + strip."""
-    return s.replace("\r", " ").replace("\n", " | ").encode("ascii", "ignore").decode("ascii")[:4000]
+def _session(token: str) -> dict[str, Any]:
+    sess = SESSIONS.get(token)
+    if not sess or not sess["dir"].exists():
+        raise HTTPException(404, "session expired — upload the PDF again")
+    return sess
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("UMBRA_PORT", "8000"))
-    print(f"\n  🕶  Umbra — running at http://127.0.0.1:{port}\n")
+    port = int(os.environ.get("QUILL_PORT", "8000"))
+    print(f"\n  🖋  Quill — running at http://127.0.0.1:{port}\n")
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
